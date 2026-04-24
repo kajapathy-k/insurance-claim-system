@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: insurance_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-insurance_claims}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-policy-service:
+    build:
+      context: ./services/user-policy-service
+    container_name: user_policy_service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-insurance_claims}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  claim-service:
+    build:
+      context: ./services/claim-service
+    container_name: claim_service
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-insurance_claims}
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8004
+    depends_on:
+      db:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+
+  claim-processing-service:
+    build:
+      context: ./services/claim-processing-service
+    container_name: claim_processing_service
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-insurance_claims}
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8004
+    depends_on:
+      db:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+    container_name: notification_service
+    ports:
+      - "8004:8004"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: insurance_frontend
+    ports:
+      - "5173:80"
+    environment:
+      - VITE_USER_POLICY_API_URL=http://localhost:8001
+      - VITE_CLAIM_API_URL=http://localhost:8002
+      - VITE_PROCESSING_API_URL=http://localhost:8003
+    depends_on:
+      - user-policy-service
+      - claim-service
+      - claim-processing-service
+
+volumes:
+  postgres_data:

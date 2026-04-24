@@ -17,16 +17,10 @@ load_dotenv(dotenv_path=ENV_PATH, override=True)
 # DATABASE CONFIG (FINAL)
 # =========================
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "5432")
-    DB_NAME = os.getenv("DB_NAME", "claims_db")
-    DB_USER = os.getenv("DB_USER", "claims_user")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "change_me_for_local_demo")
-
-    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/insurance_claims",
+)
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
