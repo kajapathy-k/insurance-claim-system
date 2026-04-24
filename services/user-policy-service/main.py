@@ -36,6 +36,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
+    role = Column(String, default="user", nullable=False, server_default="user")
 
 
 class Policy(Base):
@@ -54,6 +55,7 @@ class Policy(Base):
 class UserCreate(BaseModel):
     name: str
     email: EmailStr
+    role: str = "user"
 
 
 class UserResponse(UserCreate):
@@ -124,9 +126,14 @@ def health_check():
 # APIs
 # =========================
 
+@app.get("/users", response_model=List[UserResponse])
+def get_users(db: Session = Depends(get_db)):
+    return db.query(User).order_by(User.id.desc()).all()
+
+
 @app.post("/users", response_model=UserResponse)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = User(name=user.name, email=user.email)
+    db_user = User(name=user.name, email=user.email, role=user.role)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)

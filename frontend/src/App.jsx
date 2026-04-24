@@ -25,16 +25,28 @@ function App() {
   const [activePage, setActivePage] = useState("dashboard")
   const [policies, setPolicies] = useState([])
   const [claims, setClaims] = useState([])
+  const [users, setUsers] = useState([])
+  const [currentUser, setCurrentUser] = useState(null)
   const [message, setMessage] = useState("")
 
   const loadData = async () => {
     try {
-      const [policyResponse, claimResponse] = await Promise.all([
+      const [policyResponse, claimResponse, userResponse] = await Promise.all([
         userPolicyApi.get("/policies"),
         claimApi.get("/claims"),
+        userPolicyApi.get("/users"),
       ])
       setPolicies(policyResponse.data)
       setClaims(claimResponse.data)
+      setUsers(userResponse.data)
+      
+      setCurrentUser(current => {
+        if (current) {
+          const stillExists = userResponse.data.find(u => u.id === current.id)
+          return stillExists || (userResponse.data.length > 0 ? userResponse.data[0] : null)
+        }
+        return userResponse.data.length > 0 ? userResponse.data[0] : null
+      })
     } catch (error) {
       setMessage("Unable to load data. Please check that backend services are running.")
     }
@@ -95,16 +107,34 @@ function App() {
         </aside>
 
         <main className="flex-1 p-5 sm:p-8">
-          <header className="mb-8 rounded-[2rem] bg-white/80 p-6 shadow-soft backdrop-blur">
-            <p className="text-sm font-bold uppercase tracking-[0.25em] text-clay">
-              Insurance Operations
-            </p>
-            <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-              Smart Insurance Claim Management System
-            </h1>
-            <p className="mt-3 max-w-3xl text-slate-600">
-              Create customers and policies, submit claims, and process approvals from one clean dashboard.
-            </p>
+          <header className="mb-8 flex flex-col items-start justify-between gap-5 rounded-[2rem] bg-white/80 p-6 shadow-soft backdrop-blur md:flex-row">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.25em] text-clay">
+                Insurance Operations
+              </p>
+              <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                Smart Insurance Claim Management System
+              </h1>
+              <p className="mt-3 max-w-3xl text-slate-600">
+                Create customers and policies, submit claims, and process approvals from one clean dashboard.
+              </p>
+            </div>
+            
+            <div className="flex flex-col gap-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Simulate Login</span>
+              <select
+                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-ink outline-none ring-ocean/20 transition focus:ring-4"
+                value={currentUser?.id || ""}
+                onChange={(e) => setCurrentUser(users.find((u) => u.id === Number(e.target.value)))}
+              >
+                <option value="" disabled>Select a user...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role})
+                  </option>
+                ))}
+              </select>
+            </div>
           </header>
 
           {message && (
@@ -121,7 +151,7 @@ function App() {
             <SubmitClaim policies={policies} onCreated={loadData} showMessage={showMessage} />
           )}
           {activePage === "view-claims" && (
-            <ViewClaims claims={claims} onUpdated={loadData} showMessage={showMessage} />
+            <ViewClaims claims={claims} onUpdated={loadData} showMessage={showMessage} currentUser={currentUser} />
           )}
         </main>
       </div>
@@ -152,7 +182,7 @@ function Dashboard({ summary }) {
 }
 
 function CreatePolicy({ onCreated, showMessage }) {
-  const [form, setForm] = useState({ name: "", email: "", policy_type: "" })
+  const [form, setForm] = useState({ name: "", email: "", policy_type: "", role: "user" })
   const [loading, setLoading] = useState(false)
 
   const updateField = (field, value) => {
@@ -167,6 +197,7 @@ function CreatePolicy({ onCreated, showMessage }) {
       const userResponse = await userPolicyApi.post("/users", {
         name: form.name,
         email: form.email,
+        role: form.role,
       })
 
       await userPolicyApi.post("/policies", {
@@ -175,7 +206,7 @@ function CreatePolicy({ onCreated, showMessage }) {
         status: "active",
       })
 
-      setForm({ name: "", email: "", policy_type: "" })
+      setForm({ name: "", email: "", policy_type: "", role: "user" })
       await onCreated()
       showMessage("Policy created successfully.")
     } catch (error) {
@@ -190,6 +221,17 @@ function CreatePolicy({ onCreated, showMessage }) {
       <form className="grid gap-5" onSubmit={handleSubmit}>
         <Input label="Name" value={form.name} onChange={(value) => updateField("name", value)} />
         <Input label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
+        <label className="grid gap-2 text-sm font-bold text-slate-700">
+          Account Role
+          <select
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium outline-none ring-ocean/20 transition focus:ring-4"
+            value={form.role}
+            onChange={(event) => updateField("role", event.target.value)}
+          >
+            <option value="user">User (Standard)</option>
+            <option value="admin">Admin (Approver)</option>
+          </select>
+        </label>
         <Input
           label="Policy Type"
           placeholder="Health, Vehicle, Home..."
@@ -272,14 +314,25 @@ function SubmitClaim({ policies, onCreated, showMessage }) {
   )
 }
 
-function ViewClaims({ claims, onUpdated, showMessage }) {
+function ViewClaims({ claims, onUpdated, showMessage, currentUser }) {
   const updateClaim = async (claimId, action) => {
+    if (!currentUser) {
+      showMessage("You must be logged in as an admin to process claims.")
+      return
+    }
+
     try {
-      await processingApi.put(`/claims/${claimId}/${action}`)
+      await processingApi.put(`/claims/${claimId}/${action}`, {}, {
+        headers: { "X-User-Id": currentUser.id }
+      })
       await onUpdated()
       showMessage(`Claim ${action === "approve" ? "approved" : "rejected"} successfully.`)
     } catch (error) {
-      showMessage("Could not update claim. Please try again.")
+      if (error.response?.status === 403) {
+        showMessage(`Error: ${error.response.data.detail}`)
+      } else {
+        showMessage("Could not update claim. Please try again.")
+      }
     }
   }
 
@@ -308,21 +361,33 @@ function ViewClaims({ claims, onUpdated, showMessage }) {
                 <td className="px-6 py-4">
                   <StatusBadge status={claim.status} />
                 </td>
-                <td className="flex gap-2 px-6 py-4">
-                  <button
-                    className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    disabled={claim.status === "approved"}
-                    onClick={() => updateClaim(claim.id, "approve")}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    className="rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    disabled={claim.status === "rejected"}
-                    onClick={() => updateClaim(claim.id, "reject")}
-                  >
-                    Reject
-                  </button>
+                <td className="px-6 py-4">
+                  {currentUser?.role === "admin" ? (
+                    currentUser?.id === claim.user_id ? (
+                      <span className="text-sm font-semibold italic text-slate-400">
+                        Cannot self-approve
+                      </span>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          disabled={claim.status === "approved"}
+                          onClick={() => updateClaim(claim.id, "approve")}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          disabled={claim.status === "rejected"}
+                          onClick={() => updateClaim(claim.id, "reject")}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-400">Admin Only</span>
+                  )}
                 </td>
               </tr>
             ))}

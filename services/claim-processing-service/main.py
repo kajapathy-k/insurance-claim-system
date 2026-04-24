@@ -2,7 +2,7 @@ import os
 
 import requests
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import Column, ForeignKey, Integer, String, create_engine
@@ -30,6 +30,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
+    role = Column(String, default="user", nullable=False, server_default="user")
 
 
 class Policy(Base):
@@ -92,10 +93,19 @@ def notify(message: str):
         print(f"Notification service unavailable: {message}")
 
 
-def update_claim_status(claim_id: int, status: str, db: Session):
+def update_claim_status(claim_id: int, status: str, db: Session, user_id: int):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can process claims")
+
     claim = db.query(Claim).filter(Claim.id == claim_id).first()
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
+
+    if claim.user_id == user.id:
+        raise HTTPException(status_code=403, detail="Users cannot process their own claims")
 
     claim.status = status
     db.commit()
@@ -115,10 +125,10 @@ def health_check():
 
 
 @app.put("/claims/{claim_id}/approve", response_model=ClaimResponse)
-def approve_claim(claim_id: int, db: Session = Depends(get_db)):
-    return update_claim_status(claim_id, "approved", db)
+def approve_claim(claim_id: int, x_user_id: int = Header(...), db: Session = Depends(get_db)):
+    return update_claim_status(claim_id, "approved", db, x_user_id)
 
 
 @app.put("/claims/{claim_id}/reject", response_model=ClaimResponse)
-def reject_claim(claim_id: int, db: Session = Depends(get_db)):
-    return update_claim_status(claim_id, "rejected", db)
+def reject_claim(claim_id: int, x_user_id: int = Header(...), db: Session = Depends(get_db)):
+    return update_claim_status(claim_id, "rejected", db, x_user_id)
