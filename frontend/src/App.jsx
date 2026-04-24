@@ -5,6 +5,9 @@ import {
   FilePlus2,
   LayoutDashboard,
   ShieldCheck,
+  LogOut,
+  Activity,
+  ArrowRight
 } from "lucide-react"
 import { claimApi, processingApi, userPolicyApi } from "./api"
 
@@ -16,9 +19,9 @@ const pages = [
 ]
 
 const statusStyles = {
-  pending: "bg-amber-100 text-amber-700 ring-amber-200",
-  approved: "bg-emerald-100 text-emerald-700 ring-emerald-200",
-  rejected: "bg-red-100 text-red-700 ring-red-200",
+  pending: "bg-warning/10 text-warning ring-warning/30",
+  approved: "bg-success/10 text-success ring-success/30",
+  rejected: "bg-danger/10 text-danger ring-danger/30",
 }
 
 function App() {
@@ -32,23 +35,23 @@ function App() {
   const loadData = async () => {
     try {
       const [policyResponse, claimResponse, userResponse] = await Promise.all([
-        userPolicyApi.get("/policies"),
-        claimApi.get("/claims"),
-        userPolicyApi.get("/users"),
+        userPolicyApi.get("/policies").catch(() => ({ data: [] })),
+        claimApi.get("/claims").catch(() => ({ data: [] })),
+        userPolicyApi.get("/users").catch(() => ({ data: [] })),
       ])
       setPolicies(policyResponse.data)
       setClaims(claimResponse.data)
       setUsers(userResponse.data)
       
+      // Keep user logged in if they still exist
       setCurrentUser(current => {
         if (current) {
-          const stillExists = userResponse.data.find(u => u.id === current.id)
-          return stillExists || (userResponse.data.length > 0 ? userResponse.data[0] : null)
+          return userResponse.data.find(u => u.id === current.id) || null
         }
-        return userResponse.data.length > 0 ? userResponse.data[0] : null
+        return null
       })
     } catch (error) {
-      setMessage("Unable to load data. Please check that backend services are running.")
+      console.error(error)
     }
   }
 
@@ -61,6 +64,15 @@ function App() {
     window.setTimeout(() => setMessage(""), 3500)
   }
 
+  const handleLogout = () => {
+    setCurrentUser(null)
+    setActivePage("dashboard")
+  }
+
+  if (!currentUser) {
+    return <LoginScreen users={users} onLogin={setCurrentUser} onRefresh={loadData} />
+  }
+
   const summary = {
     total: claims.length,
     pending: claims.filter((claim) => claim.status === "pending").length,
@@ -69,91 +81,172 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-sand text-ink">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(197,107,79,0.20),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(47,111,143,0.18),_transparent_32%)]" />
-      <div className="flex min-h-screen flex-col lg:flex-row">
-        <aside className="border-b border-white/70 bg-white/75 p-5 shadow-soft backdrop-blur lg:w-72 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-ink text-white shadow-lg">
-              <BadgeCheck size={26} />
+    <div className="min-h-screen bg-background text-slate-200 font-body relative overflow-hidden">
+      {/* Background glowing orbs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary/10 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[30%] h-[40%] rounded-full bg-success/10 blur-[100px] pointer-events-none" />
+
+      <div className="flex min-h-screen flex-col lg:flex-row relative z-10">
+        <aside className="border-b border-border/50 bg-surface/40 p-6 backdrop-blur-xl lg:w-72 lg:border-b-0 lg:border-r flex flex-col">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-glow">
+              <Activity size={24} />
             </div>
             <div>
-              <p className="font-display text-lg font-bold leading-tight">Smart Insurance</p>
-              <p className="text-sm text-slate-500">Claim Management</p>
+              <p className="font-display text-lg font-bold leading-tight tracking-wide text-white">NEXUS</p>
+              <p className="text-xs text-muted uppercase tracking-wider font-semibold">Insurance Core</p>
             </div>
           </div>
 
-          <nav className="mt-7 grid grid-cols-2 gap-2 lg:grid-cols-1">
+          <nav className="grid grid-cols-2 gap-2 lg:grid-cols-1 flex-1">
             {pages.map((page) => {
               const Icon = page.icon
               const isActive = activePage === page.id
 
               return (
                 <button
-                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
+                  className={`flex items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm font-semibold transition-all duration-300 ${
                     isActive
-                      ? "bg-ink text-white shadow-lg"
-                      : "text-slate-600 hover:bg-white hover:text-ink"
+                      ? "bg-primary/10 text-primary shadow-glow ring-1 ring-primary/30"
+                      : "text-muted hover:bg-surface-light hover:text-white"
                   }`}
                   key={page.id}
                   onClick={() => setActivePage(page.id)}
                 >
-                  <Icon size={19} />
+                  <Icon size={18} className={isActive ? "text-primary" : "text-slate-400"} />
                   {page.label}
                 </button>
               )
             })}
           </nav>
+
+          <div className="hidden lg:flex flex-col mt-auto pt-6 border-t border-border/50">
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-light border border-border/50">
+              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
+                {currentUser.name.charAt(0)}
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
+                <p className="text-xs text-muted capitalize truncate">{currentUser.role} Account</p>
+              </div>
+              <button onClick={handleLogout} className="p-2 text-muted hover:text-danger transition-colors rounded-lg hover:bg-danger/10">
+                <LogOut size={16} />
+              </button>
+            </div>
+          </div>
         </aside>
 
-        <main className="flex-1 p-5 sm:p-8">
-          <header className="mb-8 flex flex-col items-start justify-between gap-5 rounded-[2rem] bg-white/80 p-6 shadow-soft backdrop-blur md:flex-row">
+        <main className="flex-1 p-5 sm:p-8 lg:px-12 lg:py-10 h-screen overflow-y-auto">
+          <header className="mb-10 flex flex-col items-start justify-between gap-5 md:flex-row md:items-end">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.25em] text-clay">
-                Insurance Operations
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary mb-2">
+                Operations Dashboard
               </p>
-              <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-                Smart Insurance Claim Management System
+              <h1 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                {pages.find(p => p.id === activePage)?.label}
               </h1>
-              <p className="mt-3 max-w-3xl text-slate-600">
-                Create customers and policies, submit claims, and process approvals from one clean dashboard.
-              </p>
             </div>
             
-            <div className="flex flex-col gap-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Simulate Login</span>
-              <select
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-ink outline-none ring-ocean/20 transition focus:ring-4"
-                value={currentUser?.id || ""}
-                onChange={(e) => setCurrentUser(users.find((u) => u.id === Number(e.target.value)))}
-              >
-                <option value="" disabled>Select a user...</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.role})
-                  </option>
-                ))}
-              </select>
+            {/* Mobile user info */}
+            <div className="flex lg:hidden items-center gap-3 px-4 py-2 rounded-xl bg-surface-light border border-border/50 w-full md:w-auto">
+              <div className="flex-1">
+                <p className="text-sm font-bold text-white">{currentUser.name}</p>
+                <p className="text-xs text-muted capitalize">{currentUser.role}</p>
+              </div>
+              <button onClick={handleLogout} className="p-2 text-muted hover:text-danger">
+                <LogOut size={18} />
+              </button>
             </div>
           </header>
 
           {message && (
-            <div className="mb-5 rounded-2xl border border-ocean/20 bg-ocean/10 px-4 py-3 text-sm font-semibold text-ocean">
+            <div className="mb-8 rounded-xl border border-primary/20 bg-primary/10 px-5 py-4 text-sm font-semibold text-primary shadow-glow flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+              <BadgeCheck size={18} />
               {message}
             </div>
           )}
 
-          {activePage === "dashboard" && <Dashboard summary={summary} />}
-          {activePage === "create-policy" && (
-            <CreatePolicy onCreated={loadData} showMessage={showMessage} />
-          )}
-          {activePage === "submit-claim" && (
-            <SubmitClaim policies={policies} onCreated={loadData} showMessage={showMessage} />
-          )}
-          {activePage === "view-claims" && (
-            <ViewClaims claims={claims} onUpdated={loadData} showMessage={showMessage} currentUser={currentUser} />
-          )}
+          <div className="animate-in fade-in duration-500">
+            {activePage === "dashboard" && <Dashboard summary={summary} />}
+            {activePage === "create-policy" && (
+              <CreatePolicy onCreated={loadData} showMessage={showMessage} />
+            )}
+            {activePage === "submit-claim" && (
+              <SubmitClaim policies={policies} onCreated={loadData} showMessage={showMessage} currentUser={currentUser} />
+            )}
+            {activePage === "view-claims" && (
+              <ViewClaims claims={claims} onUpdated={loadData} showMessage={showMessage} currentUser={currentUser} />
+            )}
+          </div>
         </main>
+      </div>
+    </div>
+  )
+}
+
+function LoginScreen({ users, onLogin, onRefresh }) {
+  const [selectedId, setSelectedId] = useState("")
+
+  const handleLogin = (e) => {
+    e.preventDefault()
+    const user = users.find(u => u.id === Number(selectedId))
+    if (user) onLogin(user)
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-5 relative overflow-hidden">
+      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-primary/10 blur-[150px] pointer-events-none" />
+      
+      <div className="w-full max-w-md bg-surface/60 backdrop-blur-2xl border border-border/50 rounded-3xl p-8 shadow-soft relative z-10">
+        <div className="flex justify-center mb-8">
+          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-glow">
+            <Activity size={32} />
+          </div>
+        </div>
+        
+        <div className="text-center mb-10">
+          <h1 className="font-display text-3xl font-bold text-white tracking-tight">Welcome to Nexus</h1>
+          <p className="text-muted mt-2 text-sm">Sign in to access the secure claim portal</p>
+        </div>
+
+        {users.length === 0 ? (
+          <div className="text-center p-6 bg-surface-light rounded-2xl border border-border">
+            <p className="text-sm text-muted mb-4">No accounts found in the system.</p>
+            <button 
+              onClick={onRefresh}
+              className="text-sm font-bold text-primary hover:text-white transition-colors"
+            >
+              Refresh Connection
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleLogin} className="grid gap-6">
+            <div className="grid gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted">Select Account</label>
+              <select
+                className="w-full rounded-xl border border-border bg-surface-light px-4 py-3.5 text-sm text-white outline-none ring-primary/30 transition focus:ring-2 appearance-none"
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+                required
+              >
+                <option value="" disabled>Choose your identity...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} — {u.role === "admin" ? "Administrator" : "Standard User"}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <button
+              type="submit"
+              disabled={!selectedId}
+              className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-glow transition hover:bg-blue-600 disabled:opacity-50 disabled:shadow-none"
+            >
+              Authenticate <ArrowRight size={16} />
+            </button>
+          </form>
+        )}
       </div>
     </div>
   )
@@ -161,20 +254,21 @@ function App() {
 
 function Dashboard({ summary }) {
   const cards = [
-    { label: "Total Claims", value: summary.total, color: "bg-ink", helper: "All submitted claims" },
-    { label: "Pending Claims", value: summary.pending, color: "bg-amber-500", helper: "Awaiting review" },
-    { label: "Approved Claims", value: summary.approved, color: "bg-emerald-600", helper: "Ready for payout" },
-    { label: "Rejected Claims", value: summary.rejected, color: "bg-red-500", helper: "Closed as rejected" },
+    { label: "Total Claims", value: summary.total, color: "text-primary", glow: "shadow-glow", border: "border-primary/20", bg: "bg-primary/5" },
+    { label: "Pending Review", value: summary.pending, color: "text-warning", glow: "shadow-glow-warning", border: "border-warning/20", bg: "bg-warning/5" },
+    { label: "Approved", value: summary.approved, color: "text-success", glow: "shadow-glow-success", border: "border-success/20", bg: "bg-success/5" },
+    { label: "Rejected", value: summary.rejected, color: "text-danger", glow: "shadow-glow-danger", border: "border-danger/20", bg: "bg-danger/5" },
   ]
 
   return (
     <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => (
-        <div className="rounded-[1.75rem] bg-white p-6 shadow-soft" key={card.label}>
-          <div className={`mb-5 h-2 w-16 rounded-full ${card.color}`} />
-          <p className="text-sm font-bold uppercase tracking-[0.18em] text-slate-400">{card.label}</p>
-          <p className="mt-3 font-display text-5xl font-bold">{card.value}</p>
-          <p className="mt-3 text-sm text-slate-500">{card.helper}</p>
+        <div className={`rounded-3xl border ${card.border} bg-surface/50 p-6 backdrop-blur-sm transition-all duration-300 hover:bg-surface`} key={card.label}>
+          <div className="flex justify-between items-start mb-6">
+            <p className="text-xs font-bold uppercase tracking-[0.1em] text-muted">{card.label}</p>
+            <div className={`w-2 h-2 rounded-full ${card.bg} ring-2 ring-current ${card.color} ${card.glow}`} />
+          </div>
+          <p className={`font-display text-5xl font-bold tracking-tight ${card.color}`}>{card.value}</p>
         </div>
       ))}
     </section>
@@ -208,53 +302,63 @@ function CreatePolicy({ onCreated, showMessage }) {
 
       setForm({ name: "", email: "", policy_type: "", role: "user" })
       await onCreated()
-      showMessage("Policy created successfully.")
+      showMessage("User and policy registered successfully.")
     } catch (error) {
-      showMessage("Could not create policy. Please try again.")
+      showMessage("System error during policy creation.")
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <FormCard title="Create Policy" subtitle="Add a customer and attach a new policy.">
-      <form className="grid gap-5" onSubmit={handleSubmit}>
-        <Input label="Name" value={form.name} onChange={(value) => updateField("name", value)} />
-        <Input label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
-        <label className="grid gap-2 text-sm font-bold text-slate-700">
-          Account Role
-          <select
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium outline-none ring-ocean/20 transition focus:ring-4"
-            value={form.role}
-            onChange={(event) => updateField("role", event.target.value)}
-          >
-            <option value="user">User (Standard)</option>
-            <option value="admin">Admin (Approver)</option>
-          </select>
-        </label>
-        <Input
-          label="Policy Type"
-          placeholder="Health, Vehicle, Home..."
-          value={form.policy_type}
-          onChange={(value) => updateField("policy_type", value)}
-        />
-        <SubmitButton loading={loading}>Create Policy</SubmitButton>
+    <FormCard title="Register Entity" subtitle="Onboard a new user and assign their primary policy.">
+      <form className="grid gap-6" onSubmit={handleSubmit}>
+        <div className="grid md:grid-cols-2 gap-6">
+          <Input label="Full Name" value={form.name} onChange={(value) => updateField("name", value)} />
+          <Input label="Email Address" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
+        </div>
+        
+        <div className="grid md:grid-cols-2 gap-6">
+          <label className="grid gap-2 text-sm font-bold text-slate-300">
+            System Role
+            <select
+              className="w-full rounded-xl border border-border bg-surface-light px-4 py-3.5 text-white outline-none ring-primary/30 transition focus:ring-2 appearance-none"
+              value={form.role}
+              onChange={(event) => updateField("role", event.target.value)}
+            >
+              <option value="user">Standard User</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </label>
+          <Input
+            label="Policy Type"
+            placeholder="e.g. Comprehensive Auto"
+            value={form.policy_type}
+            onChange={(value) => updateField("policy_type", value)}
+          />
+        </div>
+        
+        <div className="pt-4 border-t border-border/50">
+          <SubmitButton loading={loading}>Deploy Policy</SubmitButton>
+        </div>
       </form>
     </FormCard>
   )
 }
 
-function SubmitClaim({ policies, onCreated, showMessage }) {
+function SubmitClaim({ policies, onCreated, showMessage, currentUser }) {
   const [policyId, setPolicyId] = useState("")
   const [description, setDescription] = useState("")
   const [loading, setLoading] = useState(false)
 
+  // Filter policies to only show policies belonging to the current user
+  const userPolicies = policies.filter((policy) => policy.user_id === currentUser.id)
   const selectedPolicy = policies.find((policy) => String(policy.id) === String(policyId))
 
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (!selectedPolicy) {
-      showMessage("Please select a policy before submitting a claim.")
+      showMessage("A policy must be selected to proceed.")
       return
     }
 
@@ -269,46 +373,48 @@ function SubmitClaim({ policies, onCreated, showMessage }) {
       setPolicyId("")
       setDescription("")
       await onCreated()
-      showMessage("Claim submitted successfully.")
+      showMessage("Claim securely logged into the system.")
     } catch (error) {
-      showMessage("Could not submit claim. Please try again.")
+      showMessage("Transaction failed. Please retry.")
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <FormCard title="Submit Claim" subtitle="Choose an active policy and describe the claim.">
-      <form className="grid gap-5" onSubmit={handleSubmit}>
-        <label className="grid gap-2 text-sm font-bold text-slate-700">
-          Policy
+    <FormCard title="Log Incident" subtitle="File a new claim against an active policy.">
+      <form className="grid gap-6" onSubmit={handleSubmit}>
+        <label className="grid gap-2 text-sm font-bold text-slate-300">
+          Target Policy
           <select
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium outline-none ring-ocean/20 transition focus:ring-4"
+            className="w-full rounded-xl border border-border bg-surface-light px-4 py-3.5 text-white outline-none ring-primary/30 transition focus:ring-2 appearance-none"
             required
             value={policyId}
             onChange={(event) => setPolicyId(event.target.value)}
           >
-            <option value="">Select a policy</option>
-            {policies.map((policy) => (
+            <option value="">Select an active policy</option>
+            {userPolicies.map((policy) => (
               <option key={policy.id} value={policy.id}>
-                Policy #{policy.id} - User #{policy.user_id} - {policy.policy_type}
+                POL-{policy.id} — {policy.policy_type}
               </option>
             ))}
           </select>
         </label>
 
-        <label className="grid gap-2 text-sm font-bold text-slate-700">
-          Description
+        <label className="grid gap-2 text-sm font-bold text-slate-300">
+          Incident Report
           <textarea
-            className="min-h-36 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium outline-none ring-ocean/20 transition focus:ring-4"
-            placeholder="Describe the incident or reason for the claim."
+            className="min-h-[160px] w-full rounded-xl border border-border bg-surface-light px-4 py-3.5 text-white outline-none ring-primary/30 transition focus:ring-2 resize-y"
+            placeholder="Provide a detailed account of the incident..."
             required
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
         </label>
 
-        <SubmitButton loading={loading}>Submit Claim</SubmitButton>
+        <div className="pt-4 border-t border-border/50">
+          <SubmitButton loading={loading}>Submit to Ledger</SubmitButton>
+        </div>
       </form>
     </FormCard>
   )
@@ -316,8 +422,8 @@ function SubmitClaim({ policies, onCreated, showMessage }) {
 
 function ViewClaims({ claims, onUpdated, showMessage, currentUser }) {
   const updateClaim = async (claimId, action) => {
-    if (!currentUser) {
-      showMessage("You must be logged in as an admin to process claims.")
+    if (currentUser?.role !== "admin") {
+      showMessage("Unauthorized operation. Admin clearance required.")
       return
     }
 
@@ -326,75 +432,90 @@ function ViewClaims({ claims, onUpdated, showMessage, currentUser }) {
         headers: { "X-User-Id": currentUser.id }
       })
       await onUpdated()
-      showMessage(`Claim ${action === "approve" ? "approved" : "rejected"} successfully.`)
+      showMessage(`Claim #${claimId} status updated to ${action}.`)
     } catch (error) {
       if (error.response?.status === 403) {
-        showMessage(`Error: ${error.response.data.detail}`)
+        showMessage(`Access Denied: ${error.response.data.detail}`)
       } else {
-        showMessage("Could not update claim. Please try again.")
+        showMessage("System malfunction during processing.")
       }
     }
   }
 
   return (
-    <div className="overflow-hidden rounded-[1.75rem] bg-white shadow-soft">
-      <div className="border-b border-slate-100 p-6">
-        <h2 className="font-display text-2xl font-bold">View Claims</h2>
-        <p className="mt-1 text-sm text-slate-500">Review submitted claims and update their status.</p>
+    <div className="overflow-hidden rounded-[2rem] border border-border bg-surface/40 backdrop-blur-xl shadow-soft">
+      <div className="border-b border-border/50 p-6 sm:px-8 sm:py-6 flex justify-between items-center">
+        <div>
+          <h2 className="font-display text-xl font-bold text-white">Ledger Records</h2>
+          <p className="mt-1 text-sm text-muted">Real-time status of all submitted claims.</p>
+        </div>
+        <div className="hidden sm:flex px-3 py-1 bg-surface-light border border-border rounded-lg items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-success shadow-glow-success animate-pulse"></span>
+          <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Live</span>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left">
-          <thead className="bg-slate-50 text-sm uppercase tracking-[0.16em] text-slate-400">
+        <table className="w-full min-w-[800px] text-left border-collapse">
+          <thead className="bg-surface-light/50 text-xs uppercase tracking-[0.2em] text-muted border-b border-border">
             <tr>
-              <th className="px-6 py-4">Claim ID</th>
-              <th className="px-6 py-4">Policy ID</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Actions</th>
+              <th className="px-8 py-4 font-bold">Identifier</th>
+              <th className="px-8 py-4 font-bold">Policy Ref</th>
+              <th className="px-8 py-4 font-bold">State</th>
+              <th className="px-8 py-4 font-bold text-right">Operations</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border/50">
             {claims.map((claim) => (
-              <tr key={claim.id}>
-                <td className="px-6 py-4 font-bold">#{claim.id}</td>
-                <td className="px-6 py-4">#{claim.policy_id}</td>
-                <td className="px-6 py-4">
+              <tr key={claim.id} className="transition-colors hover:bg-surface-light/30 group">
+                <td className="px-8 py-5">
+                  <span className="font-mono text-sm text-slate-300">CLM-{String(claim.id).padStart(4, '0')}</span>
+                </td>
+                <td className="px-8 py-5">
+                  <span className="font-mono text-sm text-slate-400">POL-{String(claim.policy_id).padStart(4, '0')}</span>
+                </td>
+                <td className="px-8 py-5">
                   <StatusBadge status={claim.status} />
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-8 py-5 text-right">
                   {currentUser?.role === "admin" ? (
                     currentUser?.id === claim.user_id ? (
-                      <span className="text-sm font-semibold italic text-slate-400">
-                        Cannot self-approve
+                      <span className="text-xs font-bold uppercase tracking-wider text-warning flex items-center justify-end gap-2">
+                        <ShieldCheck size={14} /> Self-Assigned
                       </span>
-                    ) : (
-                      <div className="flex gap-2">
+                    ) : claim.status === "pending" ? (
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                          disabled={claim.status === "approved"}
+                          className="rounded-lg bg-success/10 text-success border border-success/30 px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition hover:bg-success hover:text-white"
                           onClick={() => updateClaim(claim.id, "approve")}
                         >
                           Approve
                         </button>
                         <button
-                          className="rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-                          disabled={claim.status === "rejected"}
+                          className="rounded-lg bg-danger/10 text-danger border border-danger/30 px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition hover:bg-danger hover:text-white"
                           onClick={() => updateClaim(claim.id, "reject")}
                         >
                           Reject
                         </button>
                       </div>
+                    ) : (
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted">Closed</span>
                     )
                   ) : (
-                    <span className="text-sm font-semibold text-slate-400">Admin Only</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted flex items-center justify-end gap-2">
+                      Restricted
+                    </span>
                   )}
                 </td>
               </tr>
             ))}
             {claims.length === 0 && (
               <tr>
-                <td className="px-6 py-10 text-center text-slate-500" colSpan="4">
-                  No claims have been submitted yet.
+                <td className="px-8 py-16 text-center text-muted" colSpan="4">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <ClipboardList size={32} className="opacity-20" />
+                    <p>No records found in the ledger.</p>
+                  </div>
                 </td>
               </tr>
             )}
@@ -407,9 +528,11 @@ function ViewClaims({ claims, onUpdated, showMessage, currentUser }) {
 
 function FormCard({ title, subtitle, children }) {
   return (
-    <section className="mx-auto max-w-2xl rounded-[1.75rem] bg-white p-6 shadow-soft sm:p-8">
-      <h2 className="font-display text-2xl font-bold">{title}</h2>
-      <p className="mb-7 mt-2 text-slate-500">{subtitle}</p>
+    <section className="mx-auto max-w-2xl rounded-[2rem] border border-border bg-surface/40 p-6 shadow-soft backdrop-blur-xl sm:p-10">
+      <div className="mb-8">
+        <h2 className="font-display text-2xl font-bold text-white">{title}</h2>
+        <p className="mt-2 text-sm text-muted">{subtitle}</p>
+      </div>
       {children}
     </section>
   )
@@ -417,10 +540,10 @@ function FormCard({ title, subtitle, children }) {
 
 function Input({ label, onChange, type = "text", value, placeholder = "" }) {
   return (
-    <label className="grid gap-2 text-sm font-bold text-slate-700">
+    <label className="grid gap-2 text-sm font-bold text-slate-300">
       {label}
       <input
-        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium outline-none ring-ocean/20 transition focus:ring-4"
+        className="w-full rounded-xl border border-border bg-surface-light px-4 py-3.5 text-white outline-none ring-primary/30 transition focus:ring-2 placeholder:text-slate-600"
         placeholder={placeholder || label}
         required
         type={type}
@@ -434,11 +557,11 @@ function Input({ label, onChange, type = "text", value, placeholder = "" }) {
 function SubmitButton({ children, loading }) {
   return (
     <button
-      className="rounded-2xl bg-clay px-5 py-3 font-bold text-white shadow-lg shadow-clay/20 transition hover:bg-[#b75e44] disabled:cursor-not-allowed disabled:bg-slate-300"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-glow transition-all hover:bg-blue-600 disabled:opacity-50 disabled:shadow-none"
       disabled={loading}
       type="submit"
     >
-      {loading ? "Please wait..." : children}
+      {loading ? "Processing..." : children}
     </button>
   )
 }
@@ -446,10 +569,11 @@ function SubmitButton({ children, loading }) {
 function StatusBadge({ status }) {
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] ring-1 ${
-        statusStyles[status] || "bg-slate-100 text-slate-700 ring-slate-200"
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ring-1 ${
+        statusStyles[status] || "bg-surface-light text-muted ring-border"
       }`}
     >
+      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
       {status}
     </span>
   )
