@@ -11,8 +11,8 @@ FROM nginx:alpine
 # Copy built assets from build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy a custom nginx configuration if needed (optional)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy a custom nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Add non-root user (nginx image already has 'nginx' user, but we can ensure correct permissions)
 RUN chown -R nginx:nginx /usr/share/nginx/html && \
