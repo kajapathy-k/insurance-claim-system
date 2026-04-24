@@ -28,35 +28,42 @@ function App() {
   const [activePage, setActivePage] = useState("dashboard")
   const [policies, setPolicies] = useState([])
   const [claims, setClaims] = useState([])
-  const [users, setUsers] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [message, setMessage] = useState("")
+  const [isInitializing, setIsInitializing] = useState(true)
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem("nexus_token")
+    if (!token) {
+      setIsInitializing(false)
+      return
+    }
+    try {
+      const meResponse = await userPolicyApi.get("/auth/me")
+      setCurrentUser(meResponse.data)
+      await loadData()
+    } catch (error) {
+      localStorage.removeItem("nexus_token")
+    } finally {
+      setIsInitializing(false)
+    }
+  }
 
   const loadData = async () => {
     try {
-      const [policyResponse, claimResponse, userResponse] = await Promise.all([
+      const [policyResponse, claimResponse] = await Promise.all([
         userPolicyApi.get("/policies").catch(() => ({ data: [] })),
         claimApi.get("/claims").catch(() => ({ data: [] })),
-        userPolicyApi.get("/users").catch(() => ({ data: [] })),
       ])
       setPolicies(policyResponse.data)
       setClaims(claimResponse.data)
-      setUsers(userResponse.data)
-      
-      // Keep user logged in if they still exist
-      setCurrentUser(current => {
-        if (current) {
-          return userResponse.data.find(u => u.id === current.id) || null
-        }
-        return null
-      })
     } catch (error) {
       console.error(error)
     }
   }
 
   useEffect(() => {
-    loadData()
+    checkAuth()
   }, [])
 
   const showMessage = (text) => {
@@ -65,13 +72,28 @@ function App() {
   }
 
   const handleLogout = () => {
+    localStorage.removeItem("nexus_token")
     setCurrentUser(null)
     setActivePage("dashboard")
   }
 
-  if (!currentUser) {
-    return <LoginScreen users={users} onLogin={setCurrentUser} onRefresh={loadData} />
+  if (isInitializing) {
+    return <div className="min-h-screen bg-background flex items-center justify-center text-primary">Loading...</div>
   }
+
+  if (!currentUser) {
+    return <LoginScreen 
+      onLogin={(user) => {
+        setCurrentUser(user)
+        loadData()
+      }} 
+    />
+  }
+
+  const availablePages = pages.filter(p => {
+    if (p.id === "create-policy" && currentUser.role !== "admin") return false
+    return true
+  })
 
   const summary = {
     total: claims.length,
@@ -99,7 +121,7 @@ function App() {
           </div>
 
           <nav className="grid grid-cols-2 gap-2 lg:grid-cols-1 flex-1">
-            {pages.map((page) => {
+            {availablePages.map((page) => {
               const Icon = page.icon
               const isActive = activePage === page.id
 
@@ -184,13 +206,27 @@ function App() {
   )
 }
 
-function LoginScreen({ users, onLogin, onRefresh }) {
-  const [selectedId, setSelectedId] = useState("")
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
-    const user = users.find(u => u.id === Number(selectedId))
-    if (user) onLogin(user)
+    setLoading(true)
+    setError("")
+    try {
+      const res = await userPolicyApi.post("/auth/login", { email, password })
+      localStorage.setItem("nexus_token", res.data.access_token)
+      
+      const meRes = await userPolicyApi.get("/auth/me")
+      onLogin(meRes.data)
+    } catch (err) {
+      setError(err.response?.data?.detail || "Authentication failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -204,49 +240,31 @@ function LoginScreen({ users, onLogin, onRefresh }) {
           </div>
         </div>
         
-        <div className="text-center mb-10">
+        <div className="text-center mb-8">
           <h1 className="font-display text-3xl font-bold text-white tracking-tight">Welcome to Nexus</h1>
           <p className="text-muted mt-2 text-sm">Sign in to access the secure claim portal</p>
         </div>
 
-        {users.length === 0 ? (
-          <div className="text-center p-6 bg-surface-light rounded-2xl border border-border">
-            <p className="text-sm text-muted mb-4">No accounts found in the system.</p>
-            <button 
-              onClick={onRefresh}
-              className="text-sm font-bold text-primary hover:text-white transition-colors"
-            >
-              Refresh Connection
-            </button>
+        {error && (
+          <div className="mb-6 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-semibold text-danger">
+            {error}
           </div>
-        ) : (
-          <form onSubmit={handleLogin} className="grid gap-6">
-            <div className="grid gap-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted">Select Account</label>
-              <select
-                className="w-full rounded-xl border border-border bg-surface-light px-4 py-3.5 text-sm text-white outline-none ring-primary/30 transition focus:ring-2 appearance-none"
-                value={selectedId}
-                onChange={(e) => setSelectedId(e.target.value)}
-                required
-              >
-                <option value="" disabled>Choose your identity...</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} — {u.role === "admin" ? "Administrator" : "Standard User"}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <button
-              type="submit"
-              disabled={!selectedId}
-              className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-glow transition hover:bg-blue-600 disabled:opacity-50 disabled:shadow-none"
-            >
-              Authenticate <ArrowRight size={16} />
-            </button>
-          </form>
         )}
+
+        <form onSubmit={handleLogin} className="grid gap-6">
+          <Input label="Email Address" type="email" value={email} onChange={setEmail} placeholder="admin@nexus.com" />
+          <Input label="Password" type="password" value={password} onChange={setPassword} placeholder="••••••••" />
+          
+          <button
+            type="submit"
+            disabled={!email || !password || loading}
+            className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-glow transition hover:bg-blue-600 disabled:opacity-50 disabled:shadow-none"
+          >
+            {loading ? "Authenticating..." : (
+              <>Authenticate <ArrowRight size={16} /></>
+            )}
+          </button>
+        </form>
       </div>
     </div>
   )
@@ -276,7 +294,7 @@ function Dashboard({ summary }) {
 }
 
 function CreatePolicy({ onCreated, showMessage }) {
-  const [form, setForm] = useState({ name: "", email: "", policy_type: "", role: "user" })
+  const [form, setForm] = useState({ name: "", email: "", password: "", policy_type: "", role: "user" })
   const [loading, setLoading] = useState(false)
 
   const updateField = (field, value) => {
@@ -288,9 +306,10 @@ function CreatePolicy({ onCreated, showMessage }) {
     setLoading(true)
 
     try {
-      const userResponse = await userPolicyApi.post("/users", {
+      const userResponse = await userPolicyApi.post("/auth/register", {
         name: form.name,
         email: form.email,
+        password: form.password,
         role: form.role,
       })
 
@@ -300,11 +319,11 @@ function CreatePolicy({ onCreated, showMessage }) {
         status: "active",
       })
 
-      setForm({ name: "", email: "", policy_type: "", role: "user" })
+      setForm({ name: "", email: "", password: "", policy_type: "", role: "user" })
       await onCreated()
       showMessage("User and policy registered successfully.")
     } catch (error) {
-      showMessage("System error during policy creation.")
+      showMessage(error.response?.data?.detail || "System error during policy creation.")
     } finally {
       setLoading(false)
     }
@@ -316,6 +335,16 @@ function CreatePolicy({ onCreated, showMessage }) {
         <div className="grid md:grid-cols-2 gap-6">
           <Input label="Full Name" value={form.name} onChange={(value) => updateField("name", value)} />
           <Input label="Email Address" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <Input label="Initial Password" type="password" value={form.password} onChange={(value) => updateField("password", value)} />
+          <Input
+            label="Policy Type"
+            placeholder="e.g. Comprehensive Auto"
+            value={form.policy_type}
+            onChange={(value) => updateField("policy_type", value)}
+          />
         </div>
         
         <div className="grid md:grid-cols-2 gap-6">
@@ -330,12 +359,6 @@ function CreatePolicy({ onCreated, showMessage }) {
               <option value="admin">Administrator</option>
             </select>
           </label>
-          <Input
-            label="Policy Type"
-            placeholder="e.g. Comprehensive Auto"
-            value={form.policy_type}
-            onChange={(value) => updateField("policy_type", value)}
-          />
         </div>
         
         <div className="pt-4 border-t border-border/50">

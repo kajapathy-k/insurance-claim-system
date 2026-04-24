@@ -3,11 +3,17 @@ from typing import List
 
 import requests
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import Column, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-jwt-key-replace-in-production")
+ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/policy/auth/login")
 
 load_dotenv()
 
@@ -30,7 +36,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True, index=True)
+    password = Column(String, nullable=False)
     role = Column(String, default="user", nullable=False, server_default="user")
 
 
@@ -85,6 +92,24 @@ def get_db():
     finally:
         db.close()
 
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("id")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise credentials_exception
+    return user
 
 def notify(message: str):
     try:
@@ -108,7 +133,11 @@ def health_check():
 
 
 @app.post("/claims", response_model=ClaimResponse)
-def submit_claim(claim: ClaimCreate, db: Session = Depends(get_db)):
+def submit_claim(claim: ClaimCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Verify policy belongs to user or admin
+    if current_user.role != "admin" and claim.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot submit claims for other users")
+        
     db_claim = Claim(
         user_id=claim.user_id,
         policy_id=claim.policy_id,
@@ -124,13 +153,17 @@ def submit_claim(claim: ClaimCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/claims", response_model=List[ClaimResponse])
-def get_claims(db: Session = Depends(get_db)):
-    return db.query(Claim).order_by(Claim.id.desc()).all()
+def get_claims(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if current_user.role == "admin":
+        return db.query(Claim).order_by(Claim.id.desc()).all()
+    return db.query(Claim).filter(Claim.user_id == current_user.id).order_by(Claim.id.desc()).all()
 
 
 @app.get("/claims/{claim_id}", response_model=ClaimResponse)
-def get_claim_by_id(claim_id: int, db: Session = Depends(get_db)):
+def get_claim_by_id(claim_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     claim = db.query(Claim).filter(Claim.id == claim_id).first()
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
+    if current_user.role != "admin" and claim.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return claim
